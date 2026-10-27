@@ -79,7 +79,7 @@ def render_rgb(
     """Render one frame and return an (height, width, 3) uint8 RGB array."""
     W, H = width, height
     CX, CY = W * 0.5, H * 0.435
-    RX, RY = W * 0.225, H * 0.355
+    RX, RY = W * 0.205, H * 0.355
 
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     t = 2.0 * math.pi * frame / frames
@@ -93,8 +93,10 @@ def render_rgb(
 
     # ---- aperture geometry ------------------------------------------------
     v = (yy - CY) / RY
-    # Narrower at the brow, wider at the cheeks: a hood opening, not a circle.
-    width_scale = 0.78 + 0.22 * np.clip((v + 1.0) * 0.5, 0.0, 1.0)
+    # Almond-shaped opening: narrow at the brow, wide at the cheeks, tapering
+    # again at the chin.  A plain circle reads as a ghost head.
+    width_scale = 0.58 + 0.42 * _smoothstep(-0.98, -0.05, v)
+    width_scale *= 1.0 - 0.22 * _smoothstep(0.45, 1.0, v)
     u = (xx - CX) / (RX * width_scale)
     r = (np.abs(u) ** 2.0 + np.abs(v) ** 2.0) ** 0.5
     theta = np.arctan2(v, u)
@@ -104,40 +106,52 @@ def render_rgb(
     hood = _hood_mask(W, H)
     noise = _noise_field(W, H)
 
+    # Cloth folds: mostly radial around the opening, plus a couple of broad
+    # diagonal creases.  Kept low-contrast so the cowl stays near-black.
     fold = (
         0.50
-        + 0.20 * np.sin(xx * 0.0062 + yy * 0.0130 + 2.0 * np.sin(xx * 0.0021 - yy * 0.0042))
-        + 0.14 * np.sin(xx * 0.0142 - yy * 0.0044 + 1.5 * np.sin(yy * 0.0063))
-        + 0.09 * np.sin(xx * 0.0310 + yy * 0.0210)
+        + 0.26 * np.sin(xx * 0.0052 + yy * 0.0118 + 2.2 * np.sin(xx * 0.0018 - yy * 0.0035))
+        + 0.18 * np.sin(xx * 0.0118 - yy * 0.0040 + 1.8 * np.sin(yy * 0.0051))
+        + 0.10 * np.sin(xx * 0.0260 + yy * 0.0180)
     )
     fold = np.clip(fold, 0.0, 1.0)
 
     d = np.maximum(0.0, r - 1.0)
-    light = np.exp(-d / 0.60)
+    light = np.exp(-d / 0.42)
 
-    # Fabric stays dark, but with enough contrast to read as a cowl.
-    hood_val = 0.30 + 0.30 * light + 0.16 * fold + 0.08 * (noise - 0.5)
+    # Fabric base.  The cowl is nearly black; only the area close to the
+    # opening catches the energy, and the frame edges fall off to black.
+    falloff = np.clip(
+        1.0 - 0.62 * (((xx - CX) / (W * 0.52)) ** 2 + ((yy - CY) / (H * 0.60)) ** 2),
+        0.0,
+        1.0,
+    )
+    hood_val = 0.020 + 0.10 * light + 0.07 * fold * light + 0.008 * (noise - 0.5)
+    hood_val *= 0.20 + 0.80 * falloff
     hood_val = np.clip(hood_val, 0.0, 1.0)
 
-    # Rim light along the opening, strongest where the energy spills out.
-    rim = np.exp(-(((r - 1.05) / 0.055) ** 2))
-    rim *= 0.62 + 0.38 * np.cos(2.0 * theta)
-    hood_val += rim * (0.40 * glow)
-
-    # Outer silhouette highlight.
+    # The cowl interior is almost black; a faint edge line keeps its cropped
+    # silhouette readable against the black background.
     soft = np.asarray(
-        Image.fromarray((hood * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(5)),
+        Image.fromarray((hood * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(7)),
         dtype=np.float32,
     ) / 255.0
     edge = np.clip(hood - soft, 0.0, 1.0)
-    hood_val += edge * 0.16
+    hood_val += edge * 0.42 * falloff
+
+    # Rim light along the opening, irregular so it does not look like a bubble.
+    # The top of the opening is in the shadow of the overhanging cowl.
+    rim = np.exp(-(((r - 1.05) / 0.055) ** 2))
+    rim *= 0.55 + 0.45 * np.cos(2.0 * theta) + 0.12 * np.sin(3.0 * theta + 0.7)
+    rim *= 0.45 + 0.55 * _smoothstep(-0.90, 0.35, v)
+    rim = np.clip(rim, 0.0, 1.2)
+    hood_val += rim * (0.26 * glow)
 
     # Cool blue-gray cloth.  B channel gets more, for the energy reflection.
     hood_rgb = np.stack(
-        [hood_val * 62.0, hood_val * 72.0, hood_val * 92.0], axis=-1
+        [hood_val * 62.0, hood_val * 70.0, hood_val * 92.0], axis=-1
     )
-    hood_rgb += np.stack([rim * 10.0, rim * 62.0, rim * 128.0], axis=-1) * glow
-    hood_rgb += np.stack([edge * 12.0, edge * 16.0, edge * 24.0], axis=-1)
+    hood_rgb += np.stack([rim * 8.0, rim * 52.0, rim * 118.0], axis=-1) * glow
 
     # ---- energy veil ------------------------------------------------------
     wave1 = np.sin(9.0 * r - 2.0 * t + 1.8 * np.sin(3.0 * theta + t))
@@ -145,61 +159,62 @@ def render_rgb(
     wave3 = np.sin(4.0 * theta + 3.5 * r - t)
     wave4 = np.sin(13.0 * r - t + 1.5 * np.sin(2.0 * theta + t))
 
-    value = 0.30 + 0.075 * wave1 + 0.045 * wave2 + 0.035 * wave3 + 0.020 * wave4
+    value = 0.21 + 0.100 * wave1 + 0.060 * wave2 + 0.045 * wave3 + 0.025 * wave4
 
     ring_mod = 0.68 + 0.32 * np.sin(5.0 * theta + 2.0 * t)
     ring_mod *= 0.60 + 0.40 * _smoothstep(-0.95, 0.55, v)
-    ring = np.exp(-(((r - 0.88) / 0.070) ** 2))
-    value += 0.52 * ring * ring_mod * veil
-    value += 0.18 * np.exp(-(((r - 0.63) / 0.060) ** 2)) * (
+    ring = np.exp(-(((r - 0.90) / 0.060) ** 2))
+    value += 0.45 * ring * ring_mod * veil
+    value += 0.16 * np.exp(-(((r - 0.64) / 0.050) ** 2)) * (
         0.68 + 0.32 * np.sin(5.0 * theta + 2.0 * t)
     )
-    value += 0.10 * np.exp(-(((r - 0.40) / 0.055) ** 2)) * (
+    value += 0.08 * np.exp(-(((r - 0.40) / 0.045) ** 2)) * (
         0.68 + 0.32 * np.sin(5.0 * theta + 2.0 * t)
     )
-    value += 0.07 * np.sin(4.0 * theta + 2.5 * r - t) * (1.0 - r)
+    value += 0.09 * np.sin(4.0 * theta + 2.5 * r - t) * (1.0 - r)
 
-    # Face structure.
-    value -= 0.20 * _gauss(u, v + 0.70, 0.92, 0.30)          # brow shadow
-    value -= 0.24 * np.exp(-(((v + 0.35) / 0.090) ** 2)) * np.exp(-((u / 0.64) ** 4))
-    value += 0.17 * np.exp(-(((v + 0.46) / 0.060) ** 2)) * np.exp(-((u / 0.60) ** 4))
+    # Thin bright filaments: the event-horizon texture of the veil.
+    filament = np.exp(-((np.sin(6.0 * theta + 4.0 * r - 2.0 * t) / 0.22) ** 2))
+    value += 0.10 * filament * (0.4 + 0.6 * r)
+
+    # Face structure.  There is no flesh here, just an energy field shaped by
+    # a remembered brow and two burning eyes.  No nose or mouth: those details
+    # turn into a skull at terminal resolution.
+    value -= 0.30 * _gauss(u, v + 0.68, 0.95, 0.30)          # brow shadow
+    value -= 0.22 * np.exp(-(((v + 0.33) / 0.10) ** 2)) * np.exp(-((u / 0.68) ** 4))
 
     for ex in (-0.30, 0.30):
-        # Socket shadow and the bright eye itself.
-        value -= 0.34 * _gauss(u - ex, v + 0.16, 0.20, 0.16)
-        value += 1.70 * _gauss(u - ex, v + 0.16, 0.075, 0.105) * glow
+        # A soft socket shadow, then the eye itself: a narrow horizontal slit.
+        value -= 0.24 * _gauss(u - ex, v + 0.15, 0.23, 0.19)
+        value += 2.20 * _gauss(u - ex, v + 0.15, 0.110, 0.075) * glow
 
-    # Soft nose: a gentle ridge that fades out above the nostrils.
-    value += 0.15 * _gauss(u, v - 0.02, 0.070, 0.26)
-    for nx in (-0.085, 0.085):
-        value -= 0.10 * _gauss(u - nx, v - 0.22, 0.050, 0.070)
+    # Shadow between the sockets, so the veil does not grow a bright nose.
+    value -= 0.18 * _gauss(u, v + 0.03, 0.10, 0.20)
 
-    for cx in (-0.52, 0.52):
-        value += 0.17 * _gauss(u - cx, v - 0.16, 0.15, 0.21)
-
-    value -= 0.30 * _gauss(u, v - 0.48, 0.34, 0.075)         # mouth slit
-    value += 0.14 * _gauss(u, v - 0.56, 0.30, 0.050)         # lower lip
-    value += 0.20 * _gauss(u, v - 0.77, 0.40, 0.105)         # chin
+    # Faint cheek and jaw modelling.
+    for cx in (-0.48, 0.48):
+        value += 0.05 * _gauss(u - cx, v - 0.20, 0.16, 0.22)
+    value -= 0.08 * _gauss(u, v - 0.60, 0.42, 0.16)
 
     for tx in (-0.78, 0.78):
         value -= 0.10 * _gauss(u - tx, v + 0.05, 0.16, 0.32)
 
     # Inner rim shadow from the hood overhang.
-    value -= 0.30 * _smoothstep(0.94, 1.0, r)
-    value -= 0.14 * _smoothstep(-0.30, -0.95, v) * _smoothstep(0.70, 0.98, r)
+    value -= 0.30 * _smoothstep(0.93, 1.0, r)
+    value -= 0.18 * _smoothstep(-0.25, -0.95, v) * _smoothstep(0.60, 0.96, r)
 
     value = np.clip(value, 0.0, 1.0)
 
-    # Deep blue -> cyan -> white.
-    stops = [0.0, 0.16, 0.34, 0.52, 0.70, 0.86, 1.0]
+    # Deep blue -> cyan -> pale shimmer -> white.
+    stops = [0.0, 0.16, 0.34, 0.50, 0.66, 0.82, 1.0]
     colors = np.array(
         [
-            [2, 3, 12],
-            [0, 9, 48],
-            [0, 34, 132],
-            [0, 92, 220],
-            [0, 170, 250],
-            [128, 232, 255],
+            [2, 4, 16],
+            [0, 14, 62],
+            [0, 46, 150],
+            [0, 120, 225],
+            [90, 200, 250],
+            [190, 240, 255],
             [255, 255, 255],
         ],
         dtype=np.float32,

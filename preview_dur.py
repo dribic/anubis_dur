@@ -63,8 +63,10 @@ def durdraw16(index: int) -> tuple[int, int, int]:
 
 
 def load_dur(path: Path) -> dict:
-    with gzip.open(path, "rt", encoding="utf-8") as handle:
-        return json.load(handle)["DurMovie"]
+    raw = path.read_bytes()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))["DurMovie"]
 
 
 def render_frame(
@@ -88,15 +90,14 @@ def render_frame(
         line = frame["contents"][y]
         for x in range(width):
             ch = line[x] if x < len(line) else " "
-            if ch == " ":
-                continue
             fg, bg = frame["colorMap"][x][y]
             if bg:
                 draw.rectangle(
                     [x * cell_w, y * cell_h, (x + 1) * cell_w - 1, (y + 1) * cell_h - 1],
                     fill=palette(bg),
                 )
-            draw.text((x * cell_w, y * cell_h), ch, font=font, fill=palette(fg))
+            if ch != " ":
+                draw.text((x * cell_w, y * cell_h), ch, font=font, fill=palette(fg))
 
     if scale != 1:
         image = image.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST)
