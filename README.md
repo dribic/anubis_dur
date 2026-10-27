@@ -14,7 +14,7 @@ There is also a second variant built from a short GIF of the actual episode shot
 (`anubis_glow.gif`). It is photographic rather than drawn, the wooden wall of the
 mothership is keyed out to black, and it loops as a forward-and-back pulse.
 
-![preview](preview-256.png)
+![preview](preview-gif-256-hd.png)
 
 ## Files
 
