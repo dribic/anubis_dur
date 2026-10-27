@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: all 256 16 hd gif preview validate clean
+.PHONY: all 256 16 hd gif install preview validate clean
 
 all: 256 16 gif
 
@@ -18,6 +18,9 @@ hd:
 
 gif:
 	$(PYTHON) make_anubis_gif.py --out anubis-gif-256-160x50.dur
+
+install:
+	sudo ./install-ly.sh
 
 preview:
 	$(PYTHON) preview_dur.py anubis-256-160x50.dur preview-256.png --frames 1,24,53,70

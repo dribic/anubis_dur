@@ -26,6 +26,7 @@ mothership is keyed out to black, and it loops as a forward-and-back pulse.
 | `anubis-gif-256-160x50.dur` | Photographic variant built from `anubis_glow.gif`, 160×50, 86 frames, ~15 fps (5.7 s loop). Background keyed out. |
 | `make_anubis.py` | Generator for the drawn scene; writes a `.dur` file. |
 | `make_anubis_gif.py` | Generator for the GIF variant: keys out the background, crops, tones and samples. |
+| `install-ly.sh` | Installs the animation to `/etc/ly` and rewrites `config.ini` (idempotent, keeps a backup). |
 | `anubis_scene.py` | High-resolution scene renderer (numpy + Pillow). |
 | `preview_dur.py` | Renders frames from a `.dur` to a PNG contact sheet. |
 | `validate_dur.py` | Checks the format, row widths, colours, loop seam and Durdraw loading. |
@@ -147,6 +148,34 @@ output).
 
 ## Install for ly
 
+`install-ly.sh` does the whole job: it copies the animation to
+`/etc/ly/anubis.dur`, backs up `config.ini`, and rewrites the dur options. It is
+idempotent, so it is safe to run again after regenerating the animation.
+
+```sh
+sudo ./install-ly.sh
+```
+
+To use the drawn variant instead, change `DUR_NAME` at the top of the script to
+`anubis-256-160x50.dur`. To install into a different tree (for a test or a chroot),
+set `LY_DIR`:
+
+```sh
+LY_DIR=/tmp/ly-test ./install-ly.sh
+```
+
+After the script runs, restart ly (or log out to the display manager):
+
+```sh
+sudo systemctl restart ly
+```
+
+If ly rejects the file, check `/var/log/ly.log`. The most common causes are an
+unsupported `formatVersion`, a 256-colour file with `full_color = false`, or a
+`dur_file_path` pointing at the wrong file.
+
+### Doing it by hand
+
 ```sh
 sudo install -m 644 anubis-256-160x50.dur /etc/ly/anubis.dur
 sudoedit /etc/ly/config.ini
@@ -190,9 +219,6 @@ After saving, restart ly (or log out to the display manager):
 sudo systemctl restart ly
 ```
 
-If ly rejects the file, check `/var/log/ly.log`. The most common causes are an
-unsupported `formatVersion`, a 256-colour file with `full_color = false`, or a
-`dur_file_path` pointing at the wrong file.
 
 ## Notes on the format
 
