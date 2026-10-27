@@ -2,11 +2,21 @@
 """Validate a generated .dur file against the Durdraw v7 format and ly rules.
 
 Checks structure, row widths, ASCII-only contents, colour indices, the
-column-major colorMap, and seamless looping.  Also loads the file through
+column-major colorMap, and the loop seam.  Also loads the file through
 Durdraw's own parser to catch anything the format description misses.
 
+Two loop checks are available:
+
+  * ``--scene-loop`` re-renders the synthetic scene at frame 0 and frame N and
+    requires them to match exactly.  This only applies to files produced by
+    ``make_anubis.py``.
+  * the default check reconstructs the first and last frames of the file and
+    reports their mean colour difference, which catches a hard jump for any
+    source (including the GIF-based file).
+
 Usage:
-    python3 validate_dur.py anubis-256-160x50.dur
+    python3 validate_dur.py anubis-256-160x50.dur --scene-loop
+    python3 validate_dur.py anubis-gif-256-160x50.dur
 """
 
 from __future__ import annotations
@@ -28,7 +38,28 @@ def load_movie(path: Path) -> dict:
     return json.loads(raw.decode("utf-8"))["DurMovie"]
 
 
-def check(path: Path) -> bool:
+def seam_difference(movie: dict) -> float:
+    """Mean per-channel RGB difference between the last and first frame."""
+    import numpy as np
+
+    palette = (
+        m._build_xterm() if movie["colorFormat"] == "256" else m.DURDRAW16
+    )
+
+    def cells(frame: dict) -> np.ndarray:
+        indices = np.array(
+            [[frame["colorMap"][x][y] for x in range(movie["sizeX"])]
+             for y in range(movie["sizeY"])],
+            dtype=np.int64,
+        )
+        return palette[indices]
+
+    first = cells(movie["frames"][0])
+    last = cells(movie["frames"][-1])
+    return float(np.abs(first - last).mean())
+
+
+def check(path: Path, scene_loop: bool = False) -> bool:
     movie = load_movie(path)
     ok = True
 
@@ -88,15 +119,22 @@ def check(path: Path) -> bool:
                 if colors == "256" and (0 < fg < 16 or 0 < bg < 16):
                     fail(f"frame {number} [{x}][{y}]: base-16 index in 256-colour file {pair!r}")
 
-    # Seamless loop: frame `frames` is the same phase as frame 0.
-    rgb0 = render_rgb(0, len(frames), width * m.CELL_W, height * m.CELL_H)
-    rgbn = render_rgb(len(frames), len(frames), width * m.CELL_W, height * m.CELL_H)
-    c0 = m.render_frame(rgb0, width, height, 0, colors, "mosaic")
-    cn = m.render_frame(rgbn, width, height, len(frames), colors, "mosaic")
-    if c0 != cn:
-        fail("frame 0 and frame N differ: the animation is not a seamless loop")
-    else:
-        print("  loop: seamless (frame 0 == frame N)")
+    if scene_loop:
+        # Seamless loop: frame `frames` is the same phase as frame 0.
+        rgb0 = render_rgb(0, len(frames), width * m.CELL_W, height * m.CELL_H)
+        rgbn = render_rgb(len(frames), len(frames), width * m.CELL_W, height * m.CELL_H)
+        c0 = m.render_frame(rgb0, width, height, 0, colors, "mosaic")
+        cn = m.render_frame(rgbn, width, height, len(frames), colors, "mosaic")
+        if c0 != cn:
+            fail("frame 0 and frame N differ: the animation is not a seamless loop")
+        else:
+            print("  loop: seamless (frame 0 == frame N)")
+
+    # Colour distance across the actual loop seam.  Small values mean the
+    # last frame flows into the first; a hard cut shows up as tens of levels.
+    seam = seam_difference(movie)
+    note = "ok" if seam < 12.0 else "visible jump"
+    print(f"  loop seam: {seam:.1f} mean colour levels ({note})")
 
     # Load through Durdraw itself.
     try:
@@ -131,12 +169,22 @@ def check(path: Path) -> bool:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        print(__doc__)
-        return 2
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("files", nargs="+", type=Path)
+    parser.add_argument(
+        "--scene-loop",
+        action="store_true",
+        help="also re-render frame 0 and frame N of the synthetic scene and compare",
+    )
+    args = parser.parse_args()
+
     success = True
-    for name in sys.argv[1:]:
-        success = check(Path(name)) and success
+    for path in args.files:
+        success = check(path, scene_loop=args.scene_loop) and success
     return 0 if success else 1
 
 

@@ -149,14 +149,20 @@ def render_frame(
     frame: int,
     colors: str,
     shade: str = "mosaic",
+    tone: tuple[float, float, float] = (0.008, 0.42, 0.78),
 ) -> tuple[list[str], list[list[list[int]]]]:
-    """Turn one high-res RGB frame into (contents rows, colorMap columns)."""
+    """Turn one high-res RGB frame into (contents rows, colorMap columns).
+
+    ``tone`` is an ``(offset, scale, gamma)`` curve applied to normalized
+    luminance before it is quantized.  The default lifts the midtones of the
+    deliberately dark synthetic scene; photographic sources usually want a
+    gentler curve so the highlights do not clip to flat white.
+    """
     cell = _sample(rgb, width, height)
     luma = _luma(cell) / 255.0
 
-    # Lift the midtones: the source is deliberately dark, but terminal
-    # glyphs are sparse, so the veil needs a brighter curve to read.
-    t = np.clip((luma - 0.008) / 0.42, 0.0, 1.0) ** 0.78
+    offset, scale, gamma = tone
+    t = np.clip((luma - offset) / scale, 0.0, 1.0) ** gamma
 
     # Keep hue, set brightness: dark blue stays blue but gains value, and
     # near-white highlights become white.
@@ -183,6 +189,15 @@ def render_frame(
         fg = ansi_ramp[ci]
         fg[~lit] = 0
         bg = np.zeros((height, width), dtype=np.int64)
+    elif shade == "blocks":
+        # Every cell is a solid colour block: no glyph noise, which suits
+        # photographic sources where the glyph ramp only adds texture.
+        fg_rgb = hue * np.clip(t * 255.0, 0.0, 255.0)[..., None]
+        bg = indices[_nearest(palette, fg_rgb)].reshape(height, width)
+        fg = np.zeros((height, width), dtype=np.int64)
+        level = np.zeros((height, width), dtype=np.int64)
+        blank = luma < 0.004
+        bg[blank] = 0
     elif shade == "mosaic":
         # Filled cells: background carries the smooth colour field, the
         # glyph adds a little texture on top.
