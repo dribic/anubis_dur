@@ -78,7 +78,7 @@ echo "installed $DUR_NAME -> $LY_DIR/anubis.dur"
 echo "config backup: $LY_DIR/config.ini.bak"
 echo
 echo "Restart ly to see it (this ends the current session):"
-echo "    systemctl restart ly"
+echo "    systemctl restart ly@tty2.service"
 echo
 echo "If ly rejects the file, check /var/log/ly.log; the usual cause is"
 echo "full_color = false or a dur_file_path pointing at the wrong file."

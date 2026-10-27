@@ -175,7 +175,7 @@ LY_DIR=/tmp/ly-test ./install-ly.sh
 After the script runs, restart ly (or log out to the display manager):
 
 ```sh
-sudo systemctl restart ly
+sudo systemctl restart ly@tty2.service
 ```
 
 If ly rejects the file, check `/var/log/ly.log`. The most common causes are an
@@ -224,7 +224,7 @@ Why these matter:
 After saving, restart ly (or log out to the display manager):
 
 ```sh
-sudo systemctl restart ly
+sudo systemctl restart ly@tty2.service
 ```
 
 
