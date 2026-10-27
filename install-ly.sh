@@ -3,6 +3,7 @@
 #
 # Run as root:
 #     sudo ./install-ly.sh
+#     sudo ./install-ly.sh anubis-gif-256-160x50.dur
 #
 # It copies the animation to /etc/ly/anubis.dur and rewrites the dur options in
 # /etc/ly/config.ini.  The first run saves the original config as config.ini.bak;
@@ -11,7 +12,7 @@ set -eu
 
 LY_DIR="${LY_DIR:-/etc/ly}"
 SRC_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-DUR_NAME="anubis-gif-256-160x50.dur"
+DUR_NAME="${1:-anubis-gif-256-240x67.dur}"
 
 if [ ! -f "$SRC_DIR/$DUR_NAME" ]; then
     echo "error: $SRC_DIR/$DUR_NAME not found" >&2
@@ -73,7 +74,7 @@ for key in settings:
 PY
 
 echo
-echo "installed $LY_DIR/anubis.dur"
+echo "installed $DUR_NAME -> $LY_DIR/anubis.dur"
 echo "config backup: $LY_DIR/config.ini.bak"
 echo
 echo "Restart ly to see it (this ends the current session):"

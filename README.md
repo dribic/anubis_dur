@@ -23,7 +23,8 @@ mothership is keyed out to black, and it loops as a forward-and-back pulse.
 | `anubis-256-160x50.dur` | 256-colour version, 160×50 cells, 90 frames, 15 fps. **Recommended default.** |
 | `anubis-16-160x50.dur` | 16-colour fallback, same timing and size. |
 | `anubis-256-240x67.dur` | Full-screen 256-colour version for a 1920×1080 console with an 8×16 font. Larger and heavier to load. |
-| `anubis-gif-256-160x50.dur` | Photographic variant built from `anubis_glow.gif`, 160×50, 86 frames, ~15 fps (5.7 s loop). Background keyed out. |
+| `anubis-gif-256-240x67.dur` | Photographic variant, full screen on a 1920×1080 console (ly reports 240×67). 86 frames, ~15 fps (5.7 s loop). **Installed by default.** |
+| `anubis-gif-256-160x50.dur` | Same variant at 160×50 for smaller consoles or a lighter file. |
 | `make_anubis.py` | Generator for the drawn scene; writes a `.dur` file. |
 | `make_anubis_gif.py` | Generator for the GIF variant: keys out the background, crops, tones and samples. |
 | `install-ly.sh` | Installs the animation to `/etc/ly` and rewrites `config.ini` (idempotent, keeps a backup). |
@@ -32,7 +33,7 @@ mothership is keyed out to black, and it loops as a forward-and-back pulse.
 | `validate_dur.py` | Checks the format, row widths, colours, loop seam and Durdraw loading. |
 | `test_frames.py` | Renders selected frames only, for quick visual iteration. |
 | `anubis_glow.gif` | Source clip for the photographic variant (480×320, 44 frames). |
-| `preview-256.png`, `preview-16.png`, `preview-256-hd.png`, `preview-gif-256.png` | Preview contact sheets. |
+| `preview-256.png`, `preview-16.png`, `preview-256-hd.png`, `preview-gif-256.png`, `preview-gif-256-hd.png` | Preview contact sheets. |
 | `scene.png` | Full-resolution still (1280×800) of the source render, for reference. |
 
 ## Requirements
@@ -63,8 +64,12 @@ python3 make_anubis.py --width 240 --height 67 --out anubis-256-240x67.dur
 python3 make_anubis.py --width 120 --height 44 --frames 60 --fps 12 --colors 256
 
 # photographic variant from the GIF (requires anubis_glow.gif)
-python3 make_anubis_gif.py
+python3 make_anubis_gif.py --width 240 --height 67 \
+    --out anubis-gif-256-240x67.dur
 ```
+
+The Makefile wraps these: `make 256`, `make 16`, `make hd`, `make gif`,
+`make gifhd`, `make preview`, `make validate`, `make install`.
 
 Options:
 
@@ -91,11 +96,12 @@ On a 1920×1080 framebuffer with the kernel's default 8×16 font that is **240×
 ## The GIF variant
 
 `make_anubis_gif.py` turns the reference clip `anubis_glow.gif` into
-`anubis-gif-256-160x50.dur`. The source frame has a wooden wall of the mothership
-behind the figure; that background is removed before sampling so the animation sits
-on pure black like the drawn version.
+`anubis-gif-256-240x67.dur` for a full 1920×1080 console, or
+`anubis-gif-256-160x50.dur` for smaller screens. The source frame has a wooden wall
+of the mothership behind the figure; that background is removed before sampling so
+the animation sits on pure black like the drawn version.
 
-![GIF variant preview](preview-gif-256.png)
+![GIF variant preview](preview-gif-256-hd.png)
 
 How the background is removed:
 
@@ -153,12 +159,14 @@ output).
 idempotent, so it is safe to run again after regenerating the animation.
 
 ```sh
-sudo ./install-ly.sh
+sudo ./install-ly.sh                                        # 240x67, full screen
+sudo ./install-ly.sh anubis-gif-256-160x50.dur              # smaller variant
+sudo ./install-ly.sh anubis-256-240x67.dur                  # drawn variant
 ```
 
-To use the drawn variant instead, change `DUR_NAME` at the top of the script to
-`anubis-256-160x50.dur`. To install into a different tree (for a test or a chroot),
-set `LY_DIR`:
+The first argument picks which `.dur` to install; the default is the
+full-screen GIF variant. To install into a different tree (for a test or a
+chroot), set `LY_DIR`:
 
 ```sh
 LY_DIR=/tmp/ly-test ./install-ly.sh
